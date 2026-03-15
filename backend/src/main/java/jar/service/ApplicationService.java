@@ -78,7 +78,7 @@ public class ApplicationService {
         // Call AI Service
         try {
             RestTemplate restTemplate = new RestTemplate();
-            String aiUrl = "http://localhost:8000/score";
+            String aiUrl = "https://resume-ai-service.onrender.com/score";
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
