@@ -12,6 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.*;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,77 +37,72 @@ public class ApplicationService {
 
     public Application applyJob(Long jobId, Long userId, MultipartFile resumeFile) throws IOException {
 
-        // Validate resume file
         if (resumeFile == null || resumeFile.isEmpty()) {
-            throw new RuntimeException("Resume file is empty!");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Resume file is empty!");
         }
 
-        // Fetch Job
         Optional<Job> jobOptional = jobRepository.findById(jobId);
         if (jobOptional.isEmpty()) {
-            throw new RuntimeException("Job not found!");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found!");
         }
         Job job = jobOptional.get();
 
-        // Fetch User
         Optional<User> userOptional = userRepository.findById(userId);
         if (userOptional.isEmpty()) {
-            throw new RuntimeException("User not found!");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found!");
         }
         User user = userOptional.get();
 
-        // Prevent duplicate application
+        // Check for duplicate application
         if (applicationRepository.existsByUserIdAndJobId(userId, jobId)) {
-            throw new RuntimeException("You have already applied to this job.");
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST, "You have already applied to this job."
+            );
         }
 
-        // Create uploads directory
+        // Create uploads folder
         String uploadDir = System.getProperty("user.dir") + File.separator + "uploads";
         File folder = new File(uploadDir);
         if (!folder.exists()) {
             folder.mkdirs();
         }
 
-        // Generate unique file name
+        // Save resume file
         String fileName = UUID.randomUUID() + "_" + resumeFile.getOriginalFilename();
         String filePath = uploadDir + File.separator + fileName;
-
-        // Save resume file
         File destinationFile = new File(filePath);
         resumeFile.transferTo(destinationFile);
 
-        // Default score
+        // Initialize AI score
         Double score = 0.0;
 
-        // Call AI Service
         try {
             RestTemplate restTemplate = new RestTemplate();
-            String aiUrl = "https://resume-ai-service.onrender.com/score";
+            String aiUrl = "https://resume-ai-service.onrender.com/analyze";
 
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
-            // Request body
-            Map<String, String> body = Map.of(
-                    "resumePath", filePath,
-                    "jobDescription", job.getDescription()
-            );
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("job_description", job.getDescription());
+            body.add("resume", new FileSystemResource(destinationFile));
 
-            HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
+            HttpEntity<MultiValueMap<String, Object>> requestEntity =
+                    new HttpEntity<>(body, headers);
 
             ResponseEntity<Map> response =
-                    restTemplate.postForEntity(aiUrl, request, Map.class);
+                    restTemplate.postForEntity(aiUrl, requestEntity, Map.class);
 
             Map<String, Object> responseBody = response.getBody();
 
-            if (responseBody != null && responseBody.containsKey("score")) {
-                score = Double.parseDouble(responseBody.get("score").toString());
+            if (responseBody != null && responseBody.get("similarity_score") != null) {
+                score = Double.parseDouble(responseBody.get("similarity_score").toString());
             }
 
             System.out.println("AI SCORE RECEIVED: " + score);
 
         } catch (Exception e) {
-            System.out.println("AI service not running. Default score = 0");
+            System.out.println("AI service error: " + e.getMessage());
         }
 
         // Save application

@@ -9,6 +9,28 @@ const ApplyJob = () => {
   const [file, setFile] = useState(null);
   const [score, setScore] = useState(null);
 
+  // ✅ File validation function
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+
+    if (!selectedFile) return;
+
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ];
+
+    if (!allowedTypes.includes(selectedFile.type)) {
+      alert("❌ Please upload a valid file (PDF or DOC/DOCX only)");
+      setFile(null);
+      e.target.value = null; // reset input
+      return;
+    }
+
+    setFile(selectedFile);
+  };
+
   const handleUpload = async () => {
 
     if (!file) {
@@ -23,21 +45,18 @@ const ApplyJob = () => {
 
     try {
 
-      const res = await API.post(
-        "/applications/apply",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data"
-          }
-        }
-      );
+      const res = await API.post("/applications/apply", formData);
 
       setScore(res.data.score);
 
     } catch (err) {
       console.error(err);
-      alert("Failed to upload resume");
+
+      if (err.response?.status === 400) {
+        alert(err.response.data?.message || "You have already applied to this job.");
+      } else {
+        alert("Failed to upload resume");
+      }
     }
   };
 
@@ -50,11 +69,14 @@ const ApplyJob = () => {
 
       <Box>
 
+        {/* ✅ File Input */}
         <input
           type="file"
-          onChange={(e) => setFile(e.target.files[0])}
+          accept=".pdf,.doc,.docx"
+          onChange={handleFileChange}
         />
 
+        {/* ✅ Upload Button */}
         <Button
           variant="contained"
           sx={{ mt: 2 }}
@@ -65,6 +87,7 @@ const ApplyJob = () => {
 
       </Box>
 
+      {/* ✅ Show Score */}
       {score !== null && (
         <Typography variant="h5" sx={{ mt: 3 }}>
           Similarity Score: {score}
